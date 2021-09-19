@@ -1,4 +1,4 @@
-This repo contains an example R code used in the Monte Carlo experiments of the paper "Robust function-on-function interaction regression with application to U.S. COVID-19 data"
+This repo contains an example R code used in the Monte Carlo experiments of the paper "Robust function-on-function interaction regression"
 # Authors
 Ufuk Beyaztas, Han Lin Shang and Abhijit Mandal
 # Procedure
