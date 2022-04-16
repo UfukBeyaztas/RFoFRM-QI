@@ -104,36 +104,36 @@ main_lq = luoqi(X, Y, t.y, t.x, main.effect, inter.effect=NULL, model = "main")
 # LQ
 mean((Y[-out_index,]-main_lq$preds[-out_index,])^2) # 1.281794
 # FoFRM-QI
-mean((Y[-out_index,]-full_pca$main_fit[-out_index,])^2) # 1.61968
+mean((Y[-out_index,]-full_pca$main_fit[-out_index,])^2) # 1.62114
 # RFoFRM-QI
-mean((Y[-out_index,]-full_rpca$main_fit[-out_index,])^2) # 0.7666512
+mean((Y[-out_index,]-full_rpca$main_fit[-out_index,])^2) # 0.7484192
 
 
 # Full model
 # LQ
 mean((Y[-out_index,]-full_lq$preds[-out_index,])^2) # 1.250122
 # FoFRM-QI
-mean((Y[-out_index,]-full_pca$quad_fit[-out_index,])^2) # 1.905992
+mean((Y[-out_index,]-full_pca$quad_fit[-out_index,])^2) # 1.91718
 # RFoFRM-QI
-mean((Y[-out_index,]-full_rpca$quad_fit[-out_index,])^2) # 0.779937
+mean((Y[-out_index,]-full_rpca$quad_fit[-out_index,])^2) # 0.7830271
 
 
 # True model
 # LQ
-mean((Y[-out_index,]-true_lq$preds[-out_index,])^2) # 1.270857
+mean((Y[-out_index,]-true_lq$preds[-out_index,])^2) # 1.352244
 # FoFRM-QI
-mean((Y[-out_index,]-true_pca$quad_fit[-out_index,])^2) # 1.446903
+mean((Y[-out_index,]-true_pca$quad_fit[-out_index,])^2) # 1.442286
 # RFoFRM-QI
-mean((Y[-out_index,]-true_rpca$quad_fit[-out_index,])^2) # 0.5269232
+mean((Y[-out_index,]-true_rpca$quad_fit[-out_index,])^2) # 0.5400502
 
 
 # Selected model
 # LQ
-mean((Y[-out_index,]-selected_lq$preds[-out_index,])^2) # 1.296777
+mean((Y[-out_index,]-selected_lq$preds[-out_index,])^2) # 1.320499
 # FoFRM-QI
-mean((Y[-out_index,]-selected_pca$quad_fit[-out_index,])^2) # 1.835438
+mean((Y[-out_index,]-selected_pca$quad_fit[-out_index,])^2) # 1.871659
 # RFoFRM-QI
-mean((Y[-out_index,]-selected_rpca$quad_fit[-out_index,])^2) # 0.5319707
+mean((Y[-out_index,]-selected_rpca$quad_fit[-out_index,])^2) # 0.6488627
 
 
 # RISEE values
@@ -146,9 +146,9 @@ for(re in 1:3){
   risee_rpca[re] = reisee(simdat1$main_coefs[[re]], true_rpca$main_coeffs[[re]], t.y, t.y)
 }
 
-risee_lq # 0.9969676 1.0000019 1.0000000
-risee_pca # 4.712007 1.090265 1.332567
-risee_rpca # 1.020841 1.000132 0.999809
+risee_lq # 7.4094703 0.9990248 1.0000003
+risee_pca # 4.712304 1.090456 1.331147
+risee_rpca # 5.085065 1.374073 1.202207
 
 # AUC values
 labelsAll = rep(1, n)
@@ -158,9 +158,9 @@ labelsAll[out_index] = 0
 # LQ
 auc_fun(full_lq$fdepth$dep, labelsAll) # 1
 # FoFRM-QI
-auc_fun(full_pca$depth_quad$dep, labelsAll) # 0.9986111
+auc_fun(full_pca$depth_quad$dep, labelsAll) # 0.9994444
 # RFoFRM-QI
-auc_fun(full_rpca$depth_quad$dep, labelsAll) # 0.995
+auc_fun(full_rpca$depth_quad$dep, labelsAll) # 0.9980556
 
 # Full model
 # LQ
@@ -168,7 +168,7 @@ auc_fun(true_lq$fdepth$dep, labelsAll) # 1
 # FoFRM-QI
 auc_fun(true_pca$depth_quad$dep, labelsAll) # 1
 # RFoFRM-QI
-auc_fun(true_rpca$depth_quad$dep, labelsAll) # 1
+auc_fun(true_rpca$depth_quad$dep, labelsAll) # 0.9969444
 
 # True model
 # LQ
@@ -176,7 +176,7 @@ auc_fun(selected_lq$fdepth$dep, labelsAll) # 1
 # FoFRM-QI
 auc_fun(selected_pca$depth_quad$dep, labelsAll) # 1
 # RFoFRM-QI
-auc_fun(selected_rpca$depth_quad$dep, labelsAll) # 0.9947222
+auc_fun(selected_rpca$depth_quad$dep, labelsAll) # 1
 
 # Selected model
 # LQ
@@ -184,7 +184,7 @@ auc_fun(main_lq$fdepth$dep, labelsAll) # 1
 # FoFRM-QI
 auc_fun(full_pca$depth_main$dep, labelsAll) # 1
 # RFoFRM-QI
-auc_fun(full_rpca$depth_main$dep, labelsAll) # 0.9988889
+auc_fun(full_rpca$depth_main$dep, labelsAll) # 0.9966667
 
 
 
@@ -194,6 +194,6 @@ C_true_rpca = cutC(data = Y, depth = true_rpca$depth_quad$dep, alpha = 0.01, B =
 # Then, the outliers are;
 out_true_rpca = which(true_rpca$depth_quad$dep < C_true_rpca)
 
-out_true_rpca # 3   8  37  40  44  49  57  62  78  84 112 124 131 135 140 166 171 182 193 195
+out_true_rpca # 3   8  37  40  44  49  57  62  78  84 112 124 131 135 140 143 149 152 166 171 182 193 195 
 # Compare with the true outliers:
 sort(out_index) # 3   8  37  40  44  49  57  62  78  84 112 124 131 135 140 166 171 182 193 195
