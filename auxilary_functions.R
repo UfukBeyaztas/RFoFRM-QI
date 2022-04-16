@@ -10,6 +10,7 @@ library('data.table')
 library('regRSM')
 library('FRegSigCom')
 library('mvtnorm')
+library('expm')
 #_____________________
 #_____________________
 
@@ -62,28 +63,50 @@ getPCA_main = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   p = dim(data)[2]
   dimnames(data)=list(as.character(1:n), as.character(1:p))
   grid_points = seq(rangeval[1], rangeval[2], length.out = p)
-  bs_basis = create.bspline.basis(rangeval, nbasis = nbasis, norder = 3)
+  bs_basis = create.bspline.basis(rangeval, nbasis = nbasis)
+  inp_mat = inprod(bs_basis, bs_basis)
+  sinp_mat = sqrtm(inp_mat)
   evalbase = eval.basis(grid_points, bs_basis)
   fdobj = fdPar(bs_basis, int2Lfd(2), lambda=0)
   pcaobj = smooth.basisPar(grid_points, t(data), bs_basis, Lfdobj=NULL, lambda=0)$fd
 
   if(emodel == "classical"){
-    dpca = pca.fd(pcaobj, nharm = ncomp, fdobj)
-    PCAscore = dpca$scores
-    PCAcoef = dpca$harmonics
-    mean_coef = dpca$meanfd 
+    mean_coef <- apply(t(pcaobj$coefs), 2, mean)
+    sdata <- scale(t(pcaobj$coefs), scale = FALSE)
+    new.data <- sdata %*% sinp_mat
+    dcov <- cov(new.data)
+    d.eigen <- eigen(dcov)
+    loads <- d.eigen$vectors[,1:ncomp]
+    PCs <- solve(sinp_mat) %*% loads
+    colnames(PCs) = 1:ncomp
+    for(i in 1:ncomp)
+      colnames(PCs)[i] = paste("PC", i, sep = "")
+    PCAcoef <- fd(PCs, bs_basis)
+    mean_coef <- fd(as.vector(mean_coef), bs_basis)
+    pcaobj2 <- pcaobj
+    pcaobj2$coefs <- t(sdata)
+    PCAscore <- inprod(pcaobj2, PCAcoef)
+    colnames(PCAscore) = 1:ncomp
+    for(i in 1:ncomp)
+      colnames(PCAscore)[i] = paste("Score", i, sep = "") 
   }else if(emodel == "robust"){
-    dpca = pca.fd(pcaobj, nharm = ncomp, fdobj)
-    PCAcoef = dpca$harmonics
-    m1 = PcaGrid(t(pcaobj$coefs), ncomp)
-    PCAscore = getScores(m1)
-    mu = as.vector(getCenter(m1))
-    mean_coef = fd(mu, bs_basis)
-    loads = getLoadings(m1)
-    
-    for (ii in 1:ncomp){
-      PCAcoef$coefs[,ii] = loads[,ii]
-    }
+    mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
+    sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
+    new.data <- sdata %*% sinp_mat
+    ppur <- PCAproj(new.data, ncomp)
+    loads <- ppur$loadings
+    PCs <- solve(sinp_mat) %*% loads
+    colnames(PCs) = 1:ncomp
+    for(i in 1:ncomp)
+      colnames(PCs)[i] = paste("PC", i, sep = "")
+    PCAcoef <- fd(PCs, bs_basis)
+    mean_coef <- fd(as.vector(mean_coef), bs_basis)
+    pcaobj2 <- pcaobj
+    pcaobj2$coefs <- t(sdata)
+    PCAscore <- inprod(pcaobj2, PCAcoef)
+    colnames(PCAscore) = 1:ncomp
+    for(i in 1:ncomp)
+      colnames(PCAscore)[i] = paste("Score", i, sep = "")
   }
   return(list(PCAcoef = PCAcoef, PCAscore = PCAscore, meanScore = mean_coef, evalbase = evalbase))
 }
@@ -106,7 +129,7 @@ getPCA_quad = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   for(i in 1:np){
     p[[i]] = dim(data[[i]])[2]
     grid_points[[i]] = seq(rangeval[[i]][1], rangeval[[i]][2], length.out = p[[i]])
-    bs_basis[[i]] = create.bspline.basis(rangeval[[i]], nbasis = nbasis[i], norder = 3)
+    bs_basis[[i]] = create.bspline.basis(rangeval[[i]], nbasis = nbasis[i])
     w_arg[[i]] = matrix(grid_points[[i]], nrow = n, ncol = p[[i]], byrow = T)
     w_mat[[i]] = smooth.basis(argvals = t(w_arg[[i]]), y = t(data[[i]]), fdParobj = bs_basis[[i]])$fd$coefs
   }
@@ -139,23 +162,54 @@ getPCA_quad = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   PCAscore = list()
   if(emodel == "classical"){
     for(iq in 1:npq){
-      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]), norder = 3)
-      fdobj = fdPar(bs_basis, int2Lfd(1), lambda=0)
-      pcaobj = smooth.basisPar(seq(rangeval[[1]][1], rangeval[[1]][2], length.out = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]])),
-                               qmat[[iq]], bs_basis, Lfdobj=NULL, lambda=0)$fd
-      pcaobj$coefs = qmat[[iq]]
-      dpca = pca.fd(pcaobj, nharm = ncomp, fdobj)
-      PCAscore[[iq]] = dpca$scores
+      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
+      inp_mat = inprod(bs_basis, bs_basis)
+      sinp_mat = sqrtm(inp_mat)
+      pcaobj = fd(qmat[[iq]], bs_basis)
+      
+      mean_coef <- apply(t(pcaobj$coefs), 2, mean)
+      sdata <- scale(t(pcaobj$coefs), scale = FALSE)
+      new.data <- sdata %*% sinp_mat
+      dcov <- cov(new.data)
+      d.eigen <- eigen(dcov)
+      loads <- d.eigen$vectors[,1:ncomp]
+      PCs <- solve(sinp_mat) %*% loads
+      colnames(PCs) = 1:ncomp
+      for(i in 1:ncomp)
+        colnames(PCs)[i] = paste("PC", i, sep = "")
+      PCAcoef <- fd(PCs, bs_basis)
+      mean_coef <- fd(as.vector(mean_coef), bs_basis)
+      pcaobj2 <- pcaobj
+      pcaobj2$coefs <- t(sdata)
+      PCAscore[[iq]] <- inprod(pcaobj2, PCAcoef)
+      colnames(PCAscore[[iq]]) = 1:ncomp
+      for(i in 1:ncomp)
+        colnames(PCAscore[[iq]])[i] = paste("Score", i, sep = "")
     }
   }else if(emodel == "robust"){
     for(iq in 1:npq){
-      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]), norder = 3)
-      fdobj = fdPar(bs_basis, int2Lfd(1), lambda=0)
-      pcaobj = smooth.basisPar(seq(rangeval[[1]][1], rangeval[[1]][2], length.out = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]])),
-                               qmat[[iq]], bs_basis, Lfdobj=NULL, lambda=0)$fd
-      pcaobj$coefs = qmat[[iq]]
-      mq1 = PcaGrid(t(pcaobj$coefs), ncomp)
-      PCAscore[[iq]] = getScores(mq1)
+      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
+      inp_mat = inprod(bs_basis, bs_basis)
+      sinp_mat = sqrtm(inp_mat)
+      pcaobj = fd(qmat[[iq]], bs_basis)
+      
+      mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
+      sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
+      new.data <- sdata %*% sinp_mat
+      ppur <- PCAproj(new.data, ncomp)
+      loads <- ppur$loadings
+      PCs <- solve(sinp_mat) %*% loads
+      colnames(PCs) = 1:ncomp
+      for(i in 1:ncomp)
+        colnames(PCs)[i] = paste("PC", i, sep = "")
+      PCAcoef <- fd(PCs, bs_basis)
+      mean_coef <- fd(as.vector(mean_coef), bs_basis)
+      pcaobj2 <- pcaobj
+      pcaobj2$coefs <- t(sdata)
+      PCAscore[[iq]] <- inprod(pcaobj2, PCAcoef)
+      colnames(PCAscore[[iq]]) = 1:ncomp
+      for(i in 1:ncomp)
+        colnames(PCAscore[[iq]])[i] = paste("Score", i, sep = "")
     }
   }
   return(PCAscore = PCAscore)
