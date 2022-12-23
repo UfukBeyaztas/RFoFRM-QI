@@ -107,7 +107,7 @@ data_generation = function(n, j){
   
   fYe = fY + fY2 + err
   
-  return(list(Y = fYe, X = fX, main_coefs = vBeta, quad_coefs = vGamma))
+  return(list(Y = fYe, Yt = fY + fY2, X = fX, main_coefs = vBeta, quad_coefs = vGamma))
   
 }
 
