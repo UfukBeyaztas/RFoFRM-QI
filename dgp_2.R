@@ -102,4 +102,3 @@ data_generation2 = function(n, j){
   return(list(Y = fYe, X = fX))
   
 }
-
