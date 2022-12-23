@@ -4,13 +4,11 @@
 library('MASS')
 library('fda')
 library('fda.usc')
-library('rrcov')
-library('ROCR')
-library('data.table')
-library('regRSM')
 library('FRegSigCom')
 library('mvtnorm')
-library('expm')
+library('pcaPP')
+library('refund')
+library('data.table')
 #_____________________
 #_____________________
 
@@ -64,8 +62,6 @@ getPCA_main = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   dimnames(data)=list(as.character(1:n), as.character(1:p))
   grid_points = seq(rangeval[1], rangeval[2], length.out = p)
   bs_basis = create.bspline.basis(rangeval, nbasis = nbasis)
-  inp_mat = inprod(bs_basis, bs_basis)
-  sinp_mat = sqrtm(inp_mat)
   evalbase = eval.basis(grid_points, bs_basis)
   fdobj = fdPar(bs_basis, int2Lfd(2), lambda=0)
   pcaobj = smooth.basisPar(grid_points, t(data), bs_basis, Lfdobj=NULL, lambda=0)$fd
@@ -73,40 +69,20 @@ getPCA_main = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   if(emodel == "classical"){
     mean_coef <- apply(t(pcaobj$coefs), 2, mean)
     sdata <- scale(t(pcaobj$coefs), scale = FALSE)
-    new.data <- sdata %*% sinp_mat
-    dcov <- cov(new.data)
+    dcov <- cov(sdata)
     d.eigen <- eigen(dcov)
-    loads <- d.eigen$vectors[,1:ncomp]
-    PCs <- solve(sinp_mat) %*% loads
-    colnames(PCs) = 1:ncomp
-    for(i in 1:ncomp)
-      colnames(PCs)[i] = paste("PC", i, sep = "")
+    PCs <- d.eigen$vectors[,1:ncomp]
     PCAcoef <- fd(PCs, bs_basis)
     mean_coef <- fd(as.vector(mean_coef), bs_basis)
-    pcaobj2 <- pcaobj
-    pcaobj2$coefs <- t(sdata)
-    PCAscore <- inprod(pcaobj2, PCAcoef)
-    colnames(PCAscore) = 1:ncomp
-    for(i in 1:ncomp)
-      colnames(PCAscore)[i] = paste("Score", i, sep = "") 
+    PCAscore <- sdata %*% PCs
   }else if(emodel == "robust"){
     mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
     sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
-    new.data <- sdata %*% sinp_mat
-    ppur <- PCAproj(new.data, ncomp)
-    loads <- ppur$loadings
-    PCs <- solve(sinp_mat) %*% loads
-    colnames(PCs) = 1:ncomp
-    for(i in 1:ncomp)
-      colnames(PCs)[i] = paste("PC", i, sep = "")
+    ppur <- PCAproj(sdata, ncomp)
+    PCs <- ppur$loadings
     PCAcoef <- fd(PCs, bs_basis)
     mean_coef <- fd(as.vector(mean_coef), bs_basis)
-    pcaobj2 <- pcaobj
-    pcaobj2$coefs <- t(sdata)
-    PCAscore <- inprod(pcaobj2, PCAcoef)
-    colnames(PCAscore) = 1:ncomp
-    for(i in 1:ncomp)
-      colnames(PCAscore)[i] = paste("Score", i, sep = "")
+    PCAscore <- (sdata) %*% PCs
   }
   return(list(PCAcoef = PCAcoef, PCAscore = PCAscore, meanScore = mean_coef, evalbase = evalbase))
 }
@@ -163,53 +139,29 @@ getPCA_quad = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
   if(emodel == "classical"){
     for(iq in 1:npq){
       bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
-      inp_mat = inprod(bs_basis, bs_basis)
-      sinp_mat = sqrtm(inp_mat)
       pcaobj = fd(qmat[[iq]], bs_basis)
       
       mean_coef <- apply(t(pcaobj$coefs), 2, mean)
       sdata <- scale(t(pcaobj$coefs), scale = FALSE)
-      new.data <- sdata %*% sinp_mat
-      dcov <- cov(new.data)
+      dcov <- cov(sdata)
       d.eigen <- eigen(dcov)
-      loads <- d.eigen$vectors[,1:ncomp]
-      PCs <- solve(sinp_mat) %*% loads
-      colnames(PCs) = 1:ncomp
-      for(i in 1:ncomp)
-        colnames(PCs)[i] = paste("PC", i, sep = "")
+      PCs <- d.eigen$vectors[,1:ncomp]
       PCAcoef <- fd(PCs, bs_basis)
       mean_coef <- fd(as.vector(mean_coef), bs_basis)
-      pcaobj2 <- pcaobj
-      pcaobj2$coefs <- t(sdata)
-      PCAscore[[iq]] <- inprod(pcaobj2, PCAcoef)
-      colnames(PCAscore[[iq]]) = 1:ncomp
-      for(i in 1:ncomp)
-        colnames(PCAscore[[iq]])[i] = paste("Score", i, sep = "")
+      PCAscore[[iq]] <- (sdata) %*% PCs
     }
   }else if(emodel == "robust"){
     for(iq in 1:npq){
       bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
-      inp_mat = inprod(bs_basis, bs_basis)
-      sinp_mat = sqrtm(inp_mat)
       pcaobj = fd(qmat[[iq]], bs_basis)
       
       mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
       sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
-      new.data <- sdata %*% sinp_mat
-      ppur <- PCAproj(new.data, ncomp)
-      loads <- ppur$loadings
-      PCs <- solve(sinp_mat) %*% loads
-      colnames(PCs) = 1:ncomp
-      for(i in 1:ncomp)
-        colnames(PCs)[i] = paste("PC", i, sep = "")
+      ppur <- PCAproj(sdata, ncomp)
+      PCs <- ppur$loadings
       PCAcoef <- fd(PCs, bs_basis)
       mean_coef <- fd(as.vector(mean_coef), bs_basis)
-      pcaobj2 <- pcaobj
-      pcaobj2$coefs <- t(sdata)
-      PCAscore[[iq]] <- inprod(pcaobj2, PCAcoef)
-      colnames(PCAscore[[iq]]) = 1:ncomp
-      for(i in 1:ncomp)
-        colnames(PCAscore[[iq]])[i] = paste("Score", i, sep = "")
+      PCAscore[[iq]] <- (sdata) %*% PCs
     }
   }
   return(PCAscore = PCAscore)
@@ -484,7 +436,7 @@ var_sel = function(Y, X, nbasisY, nbasisX, ncompX = 2, ncompY = 2, rangevalY, ra
     quad_term_selected = matrix(quad_mat_trunc[sort(sco_Xq_selected),], ncol=2)
 
   
-  return(list(maine = selected_main, quade = quad_term_selected, qterms = sco_Xq_selected))
+  return(list(maine = selected_main, quade = quad_term_selected, qterms = trunc_quad_indx))
 }
 #____________________________________________________________________________________________
 #____________________________________________________________________________________________
@@ -599,7 +551,3 @@ cutC = function(data, depth, alpha, B){
 }
 #________________________________________________________________________
 #________________________________________________________________________
-
-
-
-
