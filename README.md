@@ -13,3 +13,5 @@ library('data.table')
 library('regRSM')
 library('FRegSigCom')
 library('mvtnorm')
+# Note
+Please note that the package FRegSigCom is not on CRAN anymore. Install the FRegSigCom package using the provided .tar.gz file to perform LQ method
