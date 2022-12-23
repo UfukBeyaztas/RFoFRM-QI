@@ -431,23 +431,21 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       fresids = fY - fYfit
       fdresids = fdata(fresids, argvals = NULL, rangeval = NULL,
                        names = NULL, fdata2d = FALSE)
-      
+      fdepth = depth.mode(fdresids)
+
       fYfit_main = fYfit
       fresids_main = fY - fYfit_main
       fdresids_main = fdata(fresids_main, argvals = NULL, rangeval = NULL,
                             names = NULL, fdata2d = FALSE)
       fdepth_main = depth.mode(fdresids_main)
-      #fYhat_main = fYhat
+      fYhat_main = fYhat
       
       coef_main = list()
       km = 1
       for(im in 1:fnp){
-        coef_main[[im]] = evalx[[im]] %*% (fcomp_X[[im]]$coefs %*% fBhat[km: (km+ncX-1),] %*% t(fcomp_Y$coefs)) %*% t(evaly)
+        coef_main[[im]] = evalx[[im]] %*% (fcomp_X[[im]]$coefs %*% fBhat_main[km: (km+ncX-1),] %*% t(fcomp_Y$coefs)) %*% t(evaly)
         km = im*ncX+1
       }
-      
-      coef_quad = NA
-      fdepth = fdepth_main
     }
     
     BIC_main = BIC_fun(Y = fY, Yfit = fYfit_main, ncompX = ncX, ncompY = ncY,
