@@ -172,7 +172,7 @@ tauest = function(X, Y, c1, c2, ka, N){
       res1[j,] = sqrt(ww[j])*res[j,]
     }
     cov0 = t(res1)%*%res1/n
-    covin = ginv(cov0)
+    covin = solve(cov0)
     for(j in 1:n){
       mah0[j] = ((res[j,])%*%covin%*%(res[j,]))^(1/2)
     }
