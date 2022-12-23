@@ -110,4 +110,3 @@ data_generation = function(n, j){
   return(list(Y = fYe, Yt = fY + fY2, X = fX, main_coefs = vBeta, quad_coefs = vGamma))
   
 }
-
