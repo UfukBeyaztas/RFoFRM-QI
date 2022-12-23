@@ -5,7 +5,7 @@ source("tauEst.R")
 source("dgp_1.R")
 source("dgp_2.R")
 
-# Note that the data are generated under Scenario-1 in the paper
+# Note that the data are generated under DGP-1 - Scenario-1 in the paper
 
 # Number of observations
 n = 250
