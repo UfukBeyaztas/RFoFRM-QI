@@ -2,39 +2,39 @@
 #_______________________________________________________________________________________________________________
 
 fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("classical", "robust"), rangevalY, rangevalX,
-                mindex, qindex, fnbasisY, fnbasisX, fnpca_max_Y, fnpca_max_X, fncomp_Y, fncomp_X, BIC = TRUE){
+                mindex, qindex, fnbasisY, fnbasisX, ncompX, ncompY, BIC = TRUE){
   
   fmodel = match.arg(fmodel)
   emodel = match.arg(emodel)
+  model.type <- c(fmodel, emodel)
   if(fmodel == "full"){
     
     fnp = length(fX)
     fn = dim(fY)[1]
     fp = dim(fY)[2]
     
-    ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-    ntm = fnp * fnpca_max_X
-    ntX = ntq+ntm
-    
-    if(ntX > fp){
-      while(ntX > fp){
-        fnpca_max_X = fnpca_max_X-1
-        ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-        ntm = fnp * fnpca_max_X
-        ntX = ntq+ntm
-      } 
-    }
-    
     if(BIC){
-      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX, npca_max_X = fnpca_max_X,
-                        rangevalY = rangevalY, rangevalX = rangevalX, npca_max_Y = fnpca_max_Y, emodel = emodel)
+      
+      fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY,
+                           rangeval = rangevalY, emodel = emodel)
+      ncY = fPCA_Y$ncomp
+      
+      ncX = numeric()
+      for(fij in 1:fnp)
+        ncX[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]],
+                                 rangeval = rangevalX[[fij]], emodel = emodel)$ncomp
+      ncX = max(ncX)
+      
+      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX, npca_max_X = ncX,
+                        rangevalY = rangevalY, rangevalX = rangevalX, npca_max_Y = ncY, emodel = emodel)
       ncY = fbic$ncompY
       ncX = fbic$ncompX
-      }else{
-      ncY = fncomp_Y
-      ncX = fncomp_X
+      
+    }else{
+      ncY = ncompY
+      ncX = ncompX
     }
-  
+    
     fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY, ncomp = ncY,
                          rangeval = rangevalY, emodel = emodel)
     fsco_Y = fPCA_Y$PCAscore
@@ -45,13 +45,18 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fsco_X = list()
     evalx = list()
     fcomp_X = list()
+    fPCA_X = list()
     for(fij in 1:fnp){
-      fPCA_X = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]], ncomp = ncX,
-                           rangeval = rangevalX[[fij]], emodel = emodel)
-      fsco_X[[fij]] = fPCA_X$PCAscore
-      evalx[[fij]] = fPCA_X$evalbase
-      fcomp_X[[fij]] = fPCA_X$PCAcoef
+      fPCA_X[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]], ncomp = ncX,
+                                  rangeval = rangevalX[[fij]], emodel = emodel)
+      fsco_X[[fij]] = fPCA_X[[fij]]$PCAscore
+      evalx[[fij]] = fPCA_X[[fij]]$evalbase
+      fcomp_X[[fij]] = fPCA_X[[fij]]$PCAcoef
     }
+    
+    fpca_results = list()
+    fpca_results$Y = fPCA_Y
+    fpca_results$X = fPCA_X
     
     fnpq = fnp+fnp*(fnp-1)/2
     fq_index = 1:fnpq
@@ -66,8 +71,13 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       }
     }
     
-    fsco_X_quad = getPCA_quad(data = fX, nbasis = fnbasisX, ncomp = ncX^2,
-                              rangeval = rangevalX, emodel = emodel)
+    fquad_mat = qindex
+    
+    quad_pca <- getPCA_quad(data = fX, nbasis = fnbasisX, ncomp = ncX^2,
+                            rangeval = rangevalX, emodel = emodel)
+    
+    fsco_X_quad = quad_pca$PCAscore
+
 
     fBhat = est_fun(sco_Y = fsco_Y, sco_X = cbind(do.call(cbind, fsco_X),
                                                   do.call(cbind, fsco_X_quad)),
@@ -77,7 +87,7 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     for(fk in 1:fn){
       fXk = cbind(do.call(cbind, fsco_X), do.call(cbind, fsco_X_quad))[fk,]
       fmodel_k = pred_fun(comp_Y = fcomp_Y, sco_X = fXk, Bhat = fBhat) + fmean_Y
-      fYfit[fk,] = eval.fd(fmodel_k, seq(rangevalY[1], rangevalY[2], length.out = fp))
+      fYfit[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k)
     }
     
     fresids = fY - fYfit
@@ -88,11 +98,19 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fBhat_main = est_fun(sco_Y = fsco_Y, sco_X = do.call(cbind, fsco_X),
                          emodel = emodel)
     
+    fBhat_main1 = as.matrix(fBhat_main)
+    list_for_norm_test = list()
+    lfnt = 1
+    for(ln in 1:fnp){
+      list_for_norm_test[[ln]] = fBhat_main1[lfnt:(lfnt+ncX-1),]
+      lfnt = lfnt+ncX
+    }
+    
     fYfit_main = matrix(, nrow = fn, ncol = fp)
     for(fk in 1:fn){
       fXk_main = do.call(cbind, fsco_X)[fk,]
       fmodel_k_main = pred_fun(comp_Y = fcomp_Y, sco_X = fXk_main, Bhat = fBhat_main) + fmean_Y
-      fYfit_main[fk,] = eval.fd(fmodel_k_main, seq(rangevalY[1], rangevalY[2], length.out = fp))
+      fYfit_main[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k_main)
     }
   
     
@@ -127,14 +145,16 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       }
       coef_quad[[iq]] = cq_array
     }
-
-    BIC_main = BIC_fun(Y = fY, Yfit = fYfit_main, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_quad = BIC_fun(Y = fY, Yfit = fYfit, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_values = list(main = BIC_main, int = BIC_quad)
     
-    var_index = c("all the main, quadratic, and interaction terms were used in the model")
+    var_index = list(main = 1:fnp, int = qindex)
+    model.details = list()
+    model.details$fp = fp
+    model.details$grdp = seq(rangevalY[1], rangevalY[2], length.out = fp)
+    model.details$fq_index = fq_index
+    model.details$fBhat = fBhat
+    model.details$fBhat_main = fBhat_main
+    model.details$quad_pca = quad_pca
+    model.details$fquad_mat = fquad_mat
   }
   
   if(fmodel == "true"){
@@ -144,28 +164,29 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fn = dim(fY)[1]
     fp = dim(fY)[2]
     
-    ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-    ntm = fnp * fnpca_max_X
-    ntX = ntq+ntm
-    
-    if(ntX > fp){
-      while(ntX > fp){
-        fnpca_max_X = fnpca_max_X-1
-        ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-        ntm = fnp * fnpca_max_X
-        ntX = ntq+ntm
-      } 
-    }
-    
     if(BIC){
-      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX, npca_max_X = fnpca_max_X,
-                        rangevalY = rangevalY, rangevalX = rangevalX, npca_max_Y = fnpca_max_Y, emodel = emodel)
+      
+      fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY,
+                           rangeval = rangevalY, emodel = emodel)
+      ncY = fPCA_Y$ncomp
+      
+      ncX = numeric()
+      for(fij in 1:fnp)
+        ncX[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]],
+                                 rangeval = rangevalX[[fij]], emodel = emodel)$ncomp
+      ncX = max(ncX)
+      
+      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX, npca_max_X = ncX,
+                        rangevalY = rangevalY, rangevalX = rangevalX, npca_max_Y = ncY, emodel = emodel)
       ncY = fbic$ncompY
       ncX = fbic$ncompX
+      
     }else{
-      ncY = fncomp_Y
-      ncX = fncomp_X
+      ncY = ncompY
+      ncX = ncompX
     }
+    
+    
     
     fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY, ncomp = ncY,
                          rangeval = rangevalY, emodel = emodel)
@@ -177,16 +198,22 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fsco_X = list()
     evalx = list()
     fcomp_X = list()
+    fPCA_X = list()
     for(fij in 1:fnp){
-      fPCA_X = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]], ncomp = ncX,
-                           rangeval = rangevalX[[fij]], emodel = emodel)
-      fsco_X[[fij]] = fPCA_X$PCAscore
-      evalx[[fij]] = fPCA_X$evalbase
-      fcomp_X[[fij]] = fPCA_X$PCAcoef
+      fPCA_X[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]], ncomp = ncX,
+                                  rangeval = rangevalX[[fij]], emodel = emodel)
+      fsco_X[[fij]] = fPCA_X[[fij]]$PCAscore
+      evalx[[fij]] = fPCA_X[[fij]]$evalbase
+      fcomp_X[[fij]] = fPCA_X[[fij]]$PCAcoef
     }
     
-    fsco_X_quad = getPCA_quad(data = fX, nbasis = fnbasisX, ncomp = ncX^2,
+    fpca_results = list()
+    fpca_results$Y = fPCA_Y
+    fpca_results$X = fPCA_X
+    
+    quad_pca = getPCA_quad(data = fX, nbasis = fnbasisX, ncomp = ncX^2,
                               rangeval = rangevalX, emodel = emodel)
+    fsco_X_quad = quad_pca$PCAscore
 
     fquad_mat = matrix(0, fnp+fnp*(fnp-1)/2,2)
     fkk = 1
@@ -202,6 +229,7 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fmat_f2 = setkey(data.table(fquad_mat))
     fq_index = fmat_f2[fmat_f1, which=TRUE]
     
+
     fqsco_X_quad = fsco_X_quad[fq_index]
 
     fBhat = est_fun(sco_Y = fsco_Y, sco_X = cbind(do.call(cbind, fsco_X),
@@ -212,7 +240,7 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     for(fk in 1:fn){
       fXk = cbind(do.call(cbind, fsco_X), do.call(cbind, fqsco_X_quad))[fk,]
       fmodel_k = pred_fun(comp_Y = fcomp_Y, sco_X = fXk, Bhat = fBhat) + fmean_Y
-      fYfit[fk,] = eval.fd(fmodel_k, seq(rangevalY[1], rangevalY[2], length.out = fp))
+      fYfit[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k)
     }
     
     fresids = fY - fYfit
@@ -223,11 +251,19 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fBhat_main = est_fun(sco_Y = fsco_Y, sco_X = do.call(cbind, fsco_X),
                          emodel = emodel)
     
+    fBhat_main1 = as.matrix(fBhat_main)
+    list_for_norm_test = list()
+    lfnt = 1
+    for(ln in 1:fnp){
+      list_for_norm_test[[ln]] = fBhat_main1[lfnt:(lfnt+ncX-1),]
+      lfnt = lfnt+ncX
+    }
+    
     fYfit_main = matrix(, nrow = fn, ncol = fp)
     for(fk in 1:fn){
       fXk_main = do.call(cbind, fsco_X)[fk,]
       fmodel_k_main = pred_fun(comp_Y = fcomp_Y, sco_X = fXk_main, Bhat = fBhat_main) + fmean_Y
-      fYfit_main[fk,] = eval.fd(fmodel_k_main, seq(rangevalY[1], rangevalY[2], length.out = fp))
+      fYfit_main[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k_main)
     }
     
     fresids_main = fY - fYfit_main
@@ -238,7 +274,7 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     coef_main = list()
     km = 1
     for(im in 1:fnp){
-      coef_main[[im]] = evalx[[im]] %*% (fcomp_X[[im]]$coefs %*% fBhat_main[km: (km+ncX-1),] %*% t(fcomp_Y$coefs)) %*% t(evaly)
+      coef_main[[im]] = t(evalx[[im]] %*% (fcomp_X[[im]]$coefs %*% fBhat_main[km: (km+ncX-1),] %*% t(fcomp_Y$coefs)) %*% t(evaly)*nbasisY)
       km = im*ncX+1
     }
     
@@ -262,19 +298,20 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       cq_array = array(dim = c(fp,fp,fp))
       km = 1
       for(iqj in 1:fp){
-        cq_array[,,iqj] = coef_quad1[[iq]][km:(km+fp-1),]
+        cq_array[,,iqj] = t(coef_quad1[[iq]][km:(km+fp-1),] * nbasisY^2)
         km = iqj*fp+1
       }
       coef_quad[[iq]] = cq_array
     }
     
-    BIC_main = BIC_fun(Y = fY, Yfit = fYfit_main, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_quad = BIC_fun(Y = fY, Yfit = fYfit, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_values = list(main = BIC_main, int = BIC_quad)
-    
     var_index = list(main = mindex, int = qindex)
+    model.details = list()
+    model.details$fp = fp
+    model.details$grdp = seq(rangevalY[1], rangevalY[2], length.out = fp)
+    model.details$fq_index = fq_index
+    model.details$fBhat = fBhat
+    model.details$fBhat_main = fBhat_main
+    model.details$quad_pca = quad_pca
   }
   
   if(fmodel == "selected"){
@@ -293,28 +330,29 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fn = dim(fY)[1]
     fp = dim(fY)[2]
     
-    ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-    ntm = fnp * fnpca_max_X
-    ntX = ntq+ntm
-    
-    if(ntX > fp){
-      while(ntX > fp){
-        fnpca_max_X = fnpca_max_X-1
-        ntq = fnpca_max_X^2 * (fnp+fnp*(fnp-1)/2)
-        ntm = fnp * fnpca_max_X
-        ntX = ntq+ntm
-      } 
-    }
-    
     if(BIC){
-      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX[mindex], npca_max_X = fnpca_max_X,
-                        rangevalY = rangevalY, rangevalX = rangevalX[mindex], npca_max_Y = fnpca_max_Y, emodel = emodel)
+      
+      fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY,
+                           rangeval = rangevalY, emodel = emodel)
+      ncY = fPCA_Y$ncomp
+      
+      ncX = numeric()
+      for(fij in 1:fnp)
+        ncX[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]],
+                                 rangeval = rangevalX[[fij]], emodel = emodel)$ncomp
+      ncX = max(ncX)
+      
+      fbic = bic_fun_nc(Y = fY, X = fX, nbasisY = fnbasisY, nbasisX = fnbasisX, npca_max_X = ncX,
+                        rangevalY = rangevalY, rangevalX = rangevalX, npca_max_Y = ncY, emodel = emodel)
       ncY = fbic$ncompY
       ncX = fbic$ncompX
+      
     }else{
-      ncY = fncomp_Y
-      ncX = fncomp_X
+      ncY = ncompY
+      ncX = ncompX
     }
+    
+    
     
     fPCA_Y = getPCA_main(data = fY, nbasis = fnbasisY, ncomp = ncY,
                          rangeval = rangevalY, emodel = emodel)
@@ -326,17 +364,24 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
     fsco_X = list()
     evalx = list()
     fcomp_X = list()
+    fPCA_X = list()
     for(fij in 1:fnp){
-      fPCA_X = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[mindex][[fij]], ncomp = ncX,
-                           rangeval = rangevalX[mindex][[fij]], emodel = emodel)
-      fsco_X[[fij]] = fPCA_X$PCAscore
-      evalx[[fij]] = fPCA_X$evalbase
-      fcomp_X[[fij]] = fPCA_X$PCAcoef
+      fPCA_X[[fij]] = getPCA_main(data = fX[[fij]], nbasis = fnbasisX[[fij]], ncomp = ncX,
+                                  rangeval = rangevalX[[fij]], emodel = emodel)
+      fsco_X[[fij]] = fPCA_X[[fij]]$PCAscore
+      evalx[[fij]] = fPCA_X[[fij]]$evalbase
+      fcomp_X[[fij]] = fPCA_X[[fij]]$PCAcoef
     }
     
+    fpca_results = list()
+    fpca_results$Y = fPCA_Y
+    fpca_results$X = fPCA_X
+    
     if(is.logical(svar$qterms) == FALSE){
-      fsco_X_quad = getPCA_quad(data = fX1, nbasis = fnbasisX, ncomp = ncX^2,
-                                rangeval = rangevalX, emodel = emodel)
+      quad_pca = getPCA_quad(data = fX1, nbasis = fnbasisX, ncomp = ncX^2,
+                             rangeval = rangevalX, emodel = emodel)
+      fsco_X_quad = quad_pca$PCAscore
+
 
       fquad_mat = matrix(0, nfp1+nfp1*(nfp1-1)/2,2)
       fkk = 1
@@ -362,7 +407,7 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       for(fk in 1:fn){
         fXk = cbind(do.call(cbind, fsco_X), do.call(cbind, fqsco_X_quad))[fk,]
         fmodel_k = pred_fun(comp_Y = fcomp_Y, sco_X = fXk, Bhat = fBhat) + fmean_Y
-        fYfit[fk,] = eval.fd(fmodel_k, seq(rangevalY[1], rangevalY[2], length.out = fp))
+        fYfit[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k)
       }
       
       fresids = fY - fYfit
@@ -373,11 +418,19 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
       fBhat_main = est_fun(sco_Y = fsco_Y, sco_X = do.call(cbind, fsco_X),
                            emodel = emodel)
       
+      fBhat_main1 = as.matrix(fBhat_main)
+      list_for_norm_test = list()
+      lfnt = 1
+      for(ln in 1:fnp){
+        list_for_norm_test[[ln]] = fBhat_main1[lfnt:(lfnt+ncX-1),]
+        lfnt = lfnt+ncX
+      }
+      
       fYfit_main = matrix(, nrow = fn, ncol = fp)
       for(fk in 1:fn){
         fXk_main = do.call(cbind, fsco_X)[fk,]
         fmodel_k_main = pred_fun(comp_Y = fcomp_Y, sco_X = fXk_main, Bhat = fBhat_main) + fmean_Y
-        fYfit_main[fk,] = eval.fd(fmodel_k_main, seq(rangevalY[1], rangevalY[2], length.out = fp))
+        fYfit_main[fk,] = eval.fd(seq(rangevalY[1], rangevalY[2], length.out = fp), fmodel_k_main)
       }
       
       fresids_main = fY - fYfit_main
@@ -447,20 +500,25 @@ fpca = function(fY, fX, fmodel = c("full", "true", "selected"), emodel = c("clas
         km = im*ncX+1
       }
     }
-    
-    BIC_main = BIC_fun(Y = fY, Yfit = fYfit_main, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_quad = BIC_fun(Y = fY, Yfit = fYfit, ncompX = ncX, ncompY = ncY,
-                       emodel = emodel)
-    BIC_values = list(main = BIC_main, int = BIC_quad)
-    
+
     var_index = list(main = mindex, int = qindex)
+    model.details = list()
+    model.details$fp = fp
+    model.details$grdp = seq(rangevalY[1], rangevalY[2], length.out = fp)
+    model.details$fq_index = fq_index
+    model.details$fBhat = fBhat
+    model.details$fBhat_main = fBhat_main
+    model.details$quad_pca = quad_pca
+    model.details$fquad_mat = fquad_mat
   }
   
   return(list(main_fit = fYfit_main,
               quad_fit = fYfit,
               depth_main = fdepth_main, depth_quad = fdepth,
-              var_used = var_index, BIC = BIC_values,
+              var_used = var_index,
+              model.details = model.details,
+              fpca_results = fpca_results, model.type = model.type,
+              Bps = list_for_norm_test,
               main_coeffs = coef_main,
               quad_coeffs = coef_quad))
 }
