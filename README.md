@@ -7,11 +7,14 @@ The main file is run. The rest files include the auxilary functions.
 library('MASS')
 library('fda')
 library('fda.usc')
-library('rrcov')
-library('ROCR')
-library('data.table')
-library('regRSM')
 library('FRegSigCom')
 library('mvtnorm')
+library('pcaPP')
+library('expm')
+library('refund')
+library('data.table')
+library('mvnTest')
+library('ROCR')
+library('FDboost')
 # Note
 Please note that the package FRegSigCom is not on CRAN anymore. Install the FRegSigCom package using the provided .tar.gz file to perform LQ method
