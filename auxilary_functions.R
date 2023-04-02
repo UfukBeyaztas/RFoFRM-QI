@@ -7,9 +7,12 @@ library('fda.usc')
 library('FRegSigCom')
 library('mvtnorm')
 library('pcaPP')
+library('expm')
 library('refund')
 library('data.table')
+library('mvnTest')
 library('ROCR')
+library('FDboost')
 #_____________________
 #_____________________
 
@@ -56,7 +59,7 @@ pred_fun = function(comp_Y, sco_X, Bhat){
 #_______________________________________________________________________________________________________
 #____________________________________________FPCA_main_effect___________________________________________
 #_______________________________________________________________________________________________________
-getPCA_main = function(data, nbasis, ncomp, emodel = c("classical", "robust"), rangeval){
+getPCA_main = function(data, nbasis, ncomp = NULL, emodel = c("classical", "robust"), rangeval){
   emodel = match.arg(emodel)
   n = dim(data)[1]
   p = dim(data)[2]
@@ -72,20 +75,53 @@ getPCA_main = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
     sdata <- scale(t(pcaobj$coefs), scale = FALSE)
     dcov <- cov(sdata)
     d.eigen <- eigen(dcov)
+    if(is.null(ncomp)){
+      var_prop <- cumsum(d.eigen$values)/sum(d.eigen$values)
+      ncomp <- which(var_prop>0.9)[1] 
+    }
     PCs <- d.eigen$vectors[,1:ncomp]
     PCAcoef <- fd(PCs, bs_basis)
     mean_coef <- fd(as.vector(mean_coef), bs_basis)
     PCAscore <- sdata %*% PCs
   }else if(emodel == "robust"){
     mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
-    sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
+    sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE)
+    if(is.null(ncomp)){
+      dcov <- covPCAproj(sdata)
+      d.eigen <- eigen(dcov$cov)
+      var_prop <- cumsum(d.eigen$values)/sum(d.eigen$values)
+      ncomp <- which(var_prop>0.9)[1]
+    }
     ppur <- PCAproj(sdata, ncomp)
     PCs <- ppur$loadings
     PCAcoef <- fd(PCs, bs_basis)
     mean_coef <- fd(as.vector(mean_coef), bs_basis)
     PCAscore <- (sdata) %*% PCs
   }
-  return(list(PCAcoef = PCAcoef, PCAscore = PCAscore, meanScore = mean_coef, evalbase = evalbase))
+  return(list(PCAcoef = PCAcoef, PCAscore = PCAscore, meanScore = mean_coef, evalbase = evalbase,
+              bs_basis = bs_basis, gp = grid_points, ncomp = ncomp, emodel = emodel))
+}
+#_______________________________________________________________________________________________________
+#_______________________________________________________________________________________________________
+
+
+
+#_______________________________________________________________________________________________________
+#_______________________________________FPCA_main_effect_test_data______________________________________
+#_______________________________________________________________________________________________________
+getTestPCA_main = function(object, data){
+  bs_basis <- object$bs_basis
+  PCAcoef <- object$PCAcoef
+  gp <- object$gp
+  mean.tr <- c(object$meanScore$coefs)
+  n <- dim(data)[1]
+  p <- dim(data)[2]
+  dimnames(data) = list(as.character(1:n), as.character(1:p))
+  pcaobj <- smooth.basisPar(gp, t(data), bs_basis, Lfdobj=NULL, lambda=0)$fd
+  
+  sdata <- scale(t(pcaobj$coefs), center = mean.tr, scale = FALSE)
+  PCAscore_test <- sdata %*% object$PCAcoef$coefs
+  return(PCAscore.test = PCAscore_test)
 }
 #_______________________________________________________________________________________________________
 #_______________________________________________________________________________________________________
@@ -136,39 +172,163 @@ getPCA_quad = function(data, nbasis, ncomp, emodel = c("classical", "robust"), r
     dimnames(qmat[[i]])=list(as.character(1:dim(qmat[[i]])[1]),
                              as.character(1:dim(qmat[[i]])[2]))
   
+  mean_coef = list()
+  PCAcoef = list()
   PCAscore = list()
+  bs_basisiq = list()
   if(emodel == "classical"){
     for(iq in 1:npq){
-      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
-      pcaobj = fd(qmat[[iq]], bs_basis)
+      bs_basisiq[[iq]] = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
+      pcaobj = fd(qmat[[iq]], bs_basisiq[[iq]])
       
-      mean_coef <- apply(t(pcaobj$coefs), 2, mean)
+      mean_coef1 <- apply(t(pcaobj$coefs), 2, mean)
       sdata <- scale(t(pcaobj$coefs), scale = FALSE)
       dcov <- cov(sdata)
       d.eigen <- eigen(dcov)
       PCs <- d.eigen$vectors[,1:ncomp]
-      PCAcoef <- fd(PCs, bs_basis)
-      mean_coef <- fd(as.vector(mean_coef), bs_basis)
+      PCAcoef[[iq]] <- fd(PCs, bs_basisiq[[iq]])
+      mean_coef[[iq]] <- fd(as.vector(mean_coef1), bs_basisiq[[iq]])
       PCAscore[[iq]] <- (sdata) %*% PCs
     }
   }else if(emodel == "robust"){
     for(iq in 1:npq){
-      bs_basis = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
-      pcaobj = fd(qmat[[iq]], bs_basis)
+      bs_basisiq[[iq]] = create.bspline.basis(rangeval[[1]], nbasis = (nbasis[int_mat[iq,1]]*nbasis[int_mat[iq,2]]))
+      pcaobj = fd(qmat[[iq]], bs_basisiq[[iq]])
       
-      mean_coef <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
-      sdata <- scale(t(pcaobj$coefs), center = mean_coef, scale = FALSE) 
+      mean_coef1 <- pcaPP:::l1median(t(pcaobj$coefs), trace = -1)
+      sdata <- scale(t(pcaobj$coefs), center = mean_coef1, scale = FALSE) 
       ppur <- PCAproj(sdata, ncomp)
       PCs <- ppur$loadings
-      PCAcoef <- fd(PCs, bs_basis)
-      mean_coef <- fd(as.vector(mean_coef), bs_basis)
+      PCAcoef[[iq]] <- fd(PCs, bs_basisiq[[iq]])
+      mean_coef[[iq]] <- fd(as.vector(mean_coef1), bs_basisiq[[iq]])
       PCAscore[[iq]] <- (sdata) %*% PCs
     }
   }
-  return(PCAscore = PCAscore)
+  return(list(PCAcoef = PCAcoef, PCAscore = PCAscore, bs_basis = bs_basis, bs_basisiq = bs_basisiq,
+              gp = grid_points, meanScore = mean_coef, nbasis = nbasis))
 }
 #_____________________________________________________________________________________________________________
 #_____________________________________________________________________________________________________________
+
+
+
+#_____________________________________________________________________________________________________________
+#_______________________________________FPCA_quadratic_effect_test_data_______________________________________
+#_____________________________________________________________________________________________________________
+getTestPCA_quad = function(object, data){
+  bs_basis <- object$bs_basis
+  bs_basisiq <- object$bs_basisiq
+  PCAcoef <- object$PCAcoef
+  gp <- object$gp
+  mean.tr <- object$meanScore
+  nbasis = object$nbasis
+  np = length(data)
+  n = dim(data[[1]])[1]
+  p = list()
+
+  w_arg = list()
+  w_mat = list()
+  for(i in 1:np){
+    p[[i]] = dim(data[[i]])[2]
+    bs_basis[[i]] = create.bspline.basis(c(gp[[i]][1], gp[[i]][length(gp[[i]])]), nbasis = nbasis[i])
+    w_arg[[i]] = matrix(gp[[i]], nrow = n, ncol = p[[i]], byrow = T)
+    w_mat[[i]] = smooth.basis(argvals = t(w_arg[[i]]), y = t(data[[i]]), fdParobj = bs_basis[[i]])$fd$coefs
+  }
+  
+  
+  int_mat = matrix(, np+np*(np-1)/2,2)
+  fk = 1
+  for(fi in 1:np){
+    for(fj in fi:np){
+      int_mat[fk,1] = (1:np)[fi];
+      int_mat[fk,2] = (1:np)[fj];
+      fk = fk+1;
+    }
+  }
+  
+  npq = dim(int_mat)[1]
+  qmat = list()
+  for(i1 in 1:npq){
+    qmat1 = matrix(, nrow = (nbasis[int_mat[i1,1]]*nbasis[int_mat[i1,2]]) , ncol = n)
+    for(i2 in 1:n){
+      qmat1[,i2] = (w_mat[[int_mat[i1,1]]][,i2] %x% w_mat[[int_mat[i1,2]]][,i2])
+    }
+    qmat[[i1]] = qmat1
+  }
+  
+  for(i in 1:npq)
+    dimnames(qmat[[i]])=list(as.character(1:dim(qmat[[i]])[1]),
+                             as.character(1:dim(qmat[[i]])[2]))
+  
+  PCAscore_test = list()
+    for(iq in 1:npq){
+      pcaobj = fd(qmat[[iq]], bs_basisiq[[iq]])
+      
+      sdata <- scale(t(pcaobj$coefs), center = mean.tr[[iq]]$coefs, scale = FALSE)
+      PCAscore_test[[iq]] <- (sdata) %*% PCAcoef[[iq]]$coefs
+    }
+  return(PCAscore_test)
+}
+#_____________________________________________________________________________________________________________
+#_____________________________________________________________________________________________________________
+
+
+
+#_____________________________________________________________________________________________________________
+#________________________________________________Prediction_function__________________________________________
+#_____________________________________________________________________________________________________________
+predict_fun = function(object, Xnew){
+  fpca_results = object$fpca_results
+  model.type = object$model.type
+  fmodel = model.type[1]
+  fp = object$model.details$fp
+  grdp = object$model.details$grdp
+  mindex = object$var_used[[1]]
+  fq_index = object$model.details$fq_index
+  Xnew1 = Xnew[mindex]
+  fnp = length(Xnew1)
+  fn = dim(Xnew1[[1]])[1]
+  fBhat = object$model.details$fBhat
+  fBhat_main = object$model.details$fBhat_main
+  
+  fPCA_Y = fpca_results$Y
+  fcomp_Y = fPCA_Y$PCAcoef
+  fmean_Y = fPCA_Y$meanScore
+  fPCA_X = fpca_results$X
+  
+  fsco_X = list()
+  for(fij in 1:fnp)
+    fsco_X[[fij]] = getTestPCA_main(object = fPCA_X[[fij]], data = Xnew1[[fij]])
+  
+  quad_pca = object$model.details$quad_pca
+  if(fmodel == "full" | fmodel == "true"){
+    fsco_X_quad1 = getTestPCA_quad(object = quad_pca, data = Xnew1)
+  }else{
+    fsco_X_quad1 = getTestPCA_quad(object = quad_pca, data = Xnew)
+  }
+  
+  fsco_X_quad = fsco_X_quad1[fq_index]
+  
+  fYfit = matrix(, nrow = fn, ncol = fp)
+  for(fk in 1:fn){
+    fXk = cbind(do.call(cbind, fsco_X), do.call(cbind, fsco_X_quad))[fk,]
+    fmodel_k = pred_fun(comp_Y = fcomp_Y, sco_X = fXk, Bhat = fBhat) + fmean_Y
+    fYfit[fk,] = eval.fd(grdp, fmodel_k)
+  }
+  
+  fYfit_main = matrix(, nrow = fn, ncol = fp)
+  for(fk in 1:fn){
+    fXk_main = do.call(cbind, fsco_X)[fk,]
+    fmodel_k_main = pred_fun(comp_Y = fcomp_Y, sco_X = fXk_main, Bhat = fBhat_main) + fmean_Y
+    fYfit_main[fk,] = eval.fd(grdp, fmodel_k_main)
+  }
+  
+  return(list(pred_main = fYfit_main, pred_quad = fYfit))
+}
+#_____________________________________________________________________________________________________________
+#_____________________________________________________________________________________________________________
+
+
 
 
 #__________________________________________________________________
@@ -208,10 +368,10 @@ bic_fun_nc = function(Y, X, nbasisY, nbasisX, npca_max_Y, npca_max_X, rangevalY,
   n = dim(Y)[1]
   p = dim(Y)[2]
 
-  BIC_mat_main = matrix(, nrow = npca_max_X, ncol = npca_max_Y)
+  BIC_mat_main = matrix(1e+999, nrow = (npca_max_X+3), ncol = (npca_max_Y+3))
   
-  for(i in 1:(npca_max_X)){
-    for(j in 1:(npca_max_Y)){
+  for(i in npca_max_X:(npca_max_X+3)){
+    for(j in npca_max_Y:(npca_max_Y+3)){
       
       PCA_Y = getPCA_main(data = Y, nbasis = nbasisY, ncomp = j,
                           rangeval = rangevalY, emodel = emodel)
@@ -246,7 +406,7 @@ bic_fun_nc = function(Y, X, nbasisY, nbasisX, npca_max_Y, npca_max_X, rangevalY,
   BIC_opt_main = which(BIC_mat_main == min(BIC_mat_main), arr.ind = TRUE)
   ncomp_opt_X = BIC_opt_main[1]
   ncomp_opt_Y = BIC_opt_main[2]
-  
+
   return(list(ncompX = ncomp_opt_X, ncompY = ncomp_opt_Y, bic = BIC_mat_main[ncomp_opt_X, ncomp_opt_Y]))
 }
 #_____________________________________________________________________________________________________________
@@ -277,8 +437,9 @@ var_sel = function(Y, X, nbasisY, nbasisX, ncompX = 2, ncompY = 2, rangevalY, ra
     sco_X[[ij]] = PCA_X$PCAscore
   }
   
-  sco_Xq = getPCA_quad(data = X, nbasis = nbasisX, ncomp = ncompX,
+  sco_Xqq = getPCA_quad(data = X, nbasis = nbasisX, ncomp = ncompX,
                        rangeval = rangevalX, emodel = emodel)
+  sco_Xq = sco_Xqq$PCAscore
   
   BIC_individuals = numeric()
   
@@ -330,11 +491,11 @@ var_sel = function(Y, X, nbasisY, nbasisX, ncompX = 2, ncompY = 2, rangevalY, ra
     
     X_out = c(X_out, BIC_next2)
     
-    if(BIC_next < BIC_forw){
+    if(BIC_next/BIC_forw < 0.97){
       main_model_start = cbind(main_model_start, sco_X[[BIC_next2]])
       BIC_forw = BIC_next
       X_next[f1] = BIC_next2
-    }else if(BIC_next > BIC_forw){
+    }else if(BIC_next/BIC_forw > 0.97){
       main_model_start = main_model_start
       BIC_forw = BIC_forw
       X_next[f1] = X_next[f1]
@@ -421,11 +582,11 @@ var_sel = function(Y, X, nbasisY, nbasisX, ncompX = 2, ncompY = 2, rangevalY, ra
     BICq_next2 = BICq_sel[1,][which.min(BICq_sel[2,])]
     q_out = c(q_out, BICq_next2)
     
-    if(BICq_next < BIC_forw){
+    if(BICq_next/BIC_forw < 0.995){
       quad_model_start = cbind(quad_model_start, sco_Xq_truc[[BICq_next2]])
       BIC_forw = BICq_next
       quad_term_selected[f1] = BICq_next2
-    }else if(BICq_next > BIC_forw){
+    }else if(BICq_next/BIC_forw > 0.995){
       quad_model_start = quad_model_start
       BIC_forw = BIC_forw
       quad_term_selected[f1] = quad_term_selected[f1]
@@ -448,9 +609,11 @@ var_sel = function(Y, X, nbasisY, nbasisX, ncompX = 2, ncompY = 2, rangevalY, ra
 #______________________________________Function_for_method_of_Luo_and_Qi____________________________________
 #___________________________________________________________________________________________________________
 
-luoqi = function(X, Y, t.y, t.x, main.effect, inter.effect, model = c("full", "true", "selected", "main")){
+luoqi = function(X, Y, t.y, t.x, main.effect, inter.effect, model = c("full", "true", "selected", "main"),
+                 s.n.basis=20, t.n.basis=20, inter.n.basis=20){
   if(model == "full"){
-    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE)
+    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE,
+                              s.n.basis=s.n.basis, t.n.basis=t.n.basis, inter.n.basis=inter.n.basis)
     preds = pred.ff.interaction(model, X)
     coefs = getcoef.ff.interaction(model)
     resid = Y - preds
@@ -458,7 +621,8 @@ luoqi = function(X, Y, t.y, t.x, main.effect, inter.effect, model = c("full", "t
                   names = NULL, fdata2d = FALSE)
     fdepth = depth.mode(resid)
   }else if(model == "true"){
-    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE)
+    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE,
+                              s.n.basis=s.n.basis, t.n.basis=t.n.basis, inter.n.basis=inter.n.basis)
     preds = pred.ff.interaction(model, X)
     coefs = getcoef.ff.interaction(model)
     resid = Y - preds
@@ -466,7 +630,8 @@ luoqi = function(X, Y, t.y, t.x, main.effect, inter.effect, model = c("full", "t
                   names = NULL, fdata2d = FALSE)
     fdepth = depth.mode(resid)
   }else if(model == "selected"){
-    model = step.ff.interaction(X, Y, t.x, t.y)
+    model = step.ff.interaction(X, Y, t.x, t.y,
+                                s.n.basis=s.n.basis, t.n.basis=t.n.basis, inter.n.basis=inter.n.basis)
     preds = pred.ff.interaction(model, X)
     coefs = getcoef.ff.interaction(model)
     resid = Y - preds
@@ -474,7 +639,8 @@ luoqi = function(X, Y, t.y, t.x, main.effect, inter.effect, model = c("full", "t
                   names = NULL, fdata2d = FALSE)
     fdepth = depth.mode(resid)
   }else if(model == "main"){
-    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE)
+    model = cv.ff.interaction(X, Y, t.x, t.y, main.effect, inter.effect, adaptive=TRUE,
+                              s.n.basis=s.n.basis, t.n.basis=t.n.basis, inter.n.basis=inter.n.basis)
     preds = pred.ff.interaction(model, X)
     coefs = getcoef.ff.interaction(model)
     resid = Y - preds
@@ -552,3 +718,7 @@ cutC = function(data, depth, alpha, B){
 }
 #________________________________________________________________________
 #________________________________________________________________________
+
+
+
+
