@@ -90,7 +90,7 @@ tauest = function(X, Y, c1, c2, ka, N){
     while(ff==0 && (itertest<10000)){
       z = runif(n)
       v = sort(z, index.return = TRUE)$ix
-      v = v[1:(p+q)]
+      #v = v[1:(p+q)]
       X1 = X[v,]
       Y1 = Y[v,]
       z = cbind(X1, Y1)
@@ -101,13 +101,13 @@ tauest = function(X, Y, c1, c2, ka, N){
       itertest = itertest + 1
       if (itertest==10000) stop("too many degenerate subsamples")
     }
-    be = t(Y1)%*%X1%*%ginv(t(X1)%*%X1)
+    be = t(Y1)%*%X1%*%ginv(crossprod(X1))
     Ye = X%*%t(be)
     res = as.matrix(Y-Ye)
-    cov = t(res[v,])%*%res[v,]
+    cov = crossprod(res[v,])
     cov = cov/(det(cov))^(1/q)
 
-    covin=solve(cov)
+    covin=ginv(cov)
     for (j in 1:n){
       mah[j]=(res[j,]%*%covin%*%as.matrix(res[j,]))^(1/2);
     }
@@ -116,13 +116,13 @@ tauest = function(X, Y, c1, c2, ka, N){
     X2 = X[so2[1:n1],]
     Y2 = Y[so2[1:n1],]
     
-    be = t(Y2)%*%X2%*%ginv(t(X2)%*%X2)
+    be = t(Y2)%*%X2%*%ginv(crossprod(X2))
     Ye = X%*%t(be)
     res = as.matrix(Y-Ye)
-    cov = t(res[v,])%*%res[v,]
+    cov = crossprod(res[v,])
     cov = cov/(det(cov))^(1/q)
 
-    covin = solve(cov)
+    covin = ginv(cov)
     for (j in 1:n){
       mah[j]=(res[j,]%*%covin%*%as.matrix(res[j,]))^(1/2);
     }
@@ -162,7 +162,7 @@ tauest = function(X, Y, c1, c2, ka, N){
       X1[i,] = sqrt(ww[i])*X[i,]
       Y1[i,] = sqrt(ww[i])*Y[i,]
     }
-    be = t(Y1)%*%X1%*%ginv(t(X1)%*%X1)
+    be = t(Y1)%*%X1%*%ginv(crossprod(X1))
     g = sum(sum(abs(be-be0)))/sum(sum(abs(be0)))
 
     Ye = X%*%t(be)
@@ -171,8 +171,8 @@ tauest = function(X, Y, c1, c2, ka, N){
     for(j in 1:n){
       res1[j,] = sqrt(ww[j])*res[j,]
     }
-    cov0 = t(res1)%*%res1/n
-    covin = solve(cov0)
+    cov0 = crossprod(res1)/n
+    covin = ginv(cov0)
     for(j in 1:n){
       mah0[j] = ((res[j,])%*%covin%*%(res[j,]))^(1/2)
     }
